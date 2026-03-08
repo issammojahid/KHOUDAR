@@ -11,26 +11,84 @@ import {
   nextRound,
   getRoom,
   getRoomPublicData,
+  generateAIAnswers,
+  type Difficulty,
 } from "./gameManager";
 import { CATEGORIES } from "./arabicWords";
+
+const roundTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function scheduleRoundEnd(io: SocketServer, roomCode: string, timeLimit: number) {
+  if (roundTimers.has(roomCode)) {
+    clearTimeout(roundTimers.get(roomCode)!);
+  }
+  const timer = setTimeout(() => {
+    const currentRoom = getRoom(roomCode);
+    if (currentRoom && currentRoom.status === "playing") {
+      const { results } = calculateResults(roomCode);
+      io.to(roomCode).emit("round_ended", {
+        results,
+        letter: currentRoom.currentLetter,
+        round: currentRoom.round,
+      });
+    }
+    roundTimers.delete(roomCode);
+  }, timeLimit * 1000 + 1500);
+  roundTimers.set(roomCode, timer);
+}
+
+function scheduleAISubmit(io: SocketServer, roomCode: string, difficulty: Difficulty) {
+  const room = getRoom(roomCode);
+  if (!room || !room.hasAI) return;
+
+  const delayRange: Record<Difficulty, [number, number]> = {
+    easy:   [50_000, 90_000],
+    normal: [25_000, 55_000],
+    hard:   [8_000,  25_000],
+  };
+
+  const [minMs, maxMs] = delayRange[difficulty];
+  const delay = minMs + Math.random() * (maxMs - minMs);
+  const cappedDelay = Math.min(delay, room.timeLimit * 1000 - 2000);
+
+  setTimeout(() => {
+    const currentRoom = getRoom(roomCode);
+    if (!currentRoom || currentRoom.status !== "playing") return;
+
+    const aiAnswers = generateAIAnswers(currentRoom);
+    const { allSubmitted } = submitAnswers(roomCode, "AI_BOT", aiAnswers);
+
+    io.to(roomCode).emit("player_submitted", { playerId: "AI_BOT" });
+
+    if (allSubmitted) {
+      if (roundTimers.has(roomCode)) {
+        clearTimeout(roundTimers.get(roomCode)!);
+        roundTimers.delete(roomCode);
+      }
+      const { results } = calculateResults(roomCode);
+      io.to(roomCode).emit("round_ended", {
+        results,
+        letter: currentRoom.currentLetter,
+        round: currentRoom.round,
+      });
+    }
+  }, cappedDelay);
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
 
   const io = new SocketServer(httpServer, {
-    cors: {
-      origin: "*",
-      methods: ["GET", "POST"],
-      credentials: true,
-    },
+    cors: { origin: "*", methods: ["GET", "POST"], credentials: true },
     transports: ["websocket", "polling"],
   });
 
   io.on("connection", (socket) => {
     console.log("Player connected:", socket.id);
 
-    socket.on("create_room", ({ playerName, playerSkin }) => {
-      const room = createRoom(socket.id, playerName || "لاعب", playerSkin || "default");
+    socket.on("create_room", ({ playerName, playerSkin, difficulty, withAI }) => {
+      const diff: Difficulty = ["easy", "normal", "hard"].includes(difficulty) ? difficulty : "normal";
+      const room = createRoom(socket.id, playerName || "لاعب", playerSkin || "default", diff, !!withAI);
       socket.join(room.code);
       socket.emit("room_created", { room: getRoomPublicData(room) });
     });
@@ -57,27 +115,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         socket.emit("error", { message: result.error });
         return;
       }
+
       io.to(roomCode).emit("game_started", {
         letter: result.room.currentLetter,
         categories: CATEGORIES,
         timeLimit: result.room.timeLimit,
         round: result.room.round,
         maxRounds: result.room.maxRounds,
+        difficulty: result.room.difficulty,
       });
 
-      const timer = setTimeout(() => {
-        const currentRoom = getRoom(roomCode);
-        if (currentRoom && currentRoom.status === "playing") {
-          const { results } = calculateResults(roomCode);
-          io.to(roomCode).emit("round_ended", {
-            results,
-            letter: currentRoom.currentLetter,
-            round: currentRoom.round,
-          });
-        }
-      }, result.room.timeLimit * 1000 + 2000);
-
-      (socket as any)._roundTimer = timer;
+      scheduleRoundEnd(io, roomCode, result.room.timeLimit);
+      scheduleAISubmit(io, roomCode, result.room.difficulty);
     });
 
     socket.on("submit_answers", ({ roomCode, answers }) => {
@@ -85,11 +134,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!room || room.status !== "playing") return;
 
       const { allSubmitted } = submitAnswers(roomCode, socket.id, answers);
-
       socket.to(roomCode).emit("player_submitted", { playerId: socket.id });
       socket.emit("answers_received", { success: true });
 
       if (allSubmitted) {
+        if (roundTimers.has(roomCode)) {
+          clearTimeout(roundTimers.get(roomCode)!);
+          roundTimers.delete(roomCode);
+        }
         const { results } = calculateResults(roomCode);
         io.to(roomCode).emit("round_ended", {
           results,
@@ -106,9 +158,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { finished, room: updatedRoom } = nextRound(roomCode);
 
       if (finished) {
-        io.to(roomCode).emit("game_finished", {
-          finalScores: updatedRoom.roundResults,
-        });
+        io.to(roomCode).emit("game_finished", { finalScores: updatedRoom.roundResults });
       } else {
         io.to(roomCode).emit("game_started", {
           letter: updatedRoom.currentLetter,
@@ -116,24 +166,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           timeLimit: updatedRoom.timeLimit,
           round: updatedRoom.round,
           maxRounds: updatedRoom.maxRounds,
+          difficulty: updatedRoom.difficulty,
         });
 
-        setTimeout(() => {
-          const currentRoom = getRoom(roomCode);
-          if (currentRoom && currentRoom.status === "playing") {
-            const { results } = calculateResults(roomCode);
-            io.to(roomCode).emit("round_ended", {
-              results,
-              letter: currentRoom.currentLetter,
-              round: currentRoom.round,
-            });
-          }
-        }, updatedRoom.timeLimit * 1000 + 2000);
+        scheduleRoundEnd(io, roomCode, updatedRoom.timeLimit);
+        scheduleAISubmit(io, roomCode, updatedRoom.difficulty);
       }
-    });
-
-    socket.on("disconnect", () => {
-      console.log("Player disconnected:", socket.id);
     });
 
     socket.on("leave_room", ({ roomCode }) => {
@@ -143,11 +181,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         io.to(roomCode).emit("room_updated", { room: getRoomPublicData(updatedRoom) });
       }
     });
+
+    socket.on("disconnect", () => {
+      console.log("Player disconnected:", socket.id);
+    });
   });
 
-  app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok" });
-  });
+  app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 
   return httpServer;
 }

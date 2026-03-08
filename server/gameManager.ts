@@ -1,4 +1,6 @@
-import { ARABIC_LETTERS, CATEGORIES, getRandomLetter } from "./arabicWords";
+import { CATEGORIES, getRandomLetter, getAIAnswer } from "./arabicWords";
+
+export type Difficulty = "easy" | "normal" | "hard";
 
 export interface Player {
   id: string;
@@ -9,6 +11,7 @@ export interface Player {
   ready: boolean;
   answers: Record<string, string>;
   coins: number;
+  isAI: boolean;
 }
 
 export interface Room {
@@ -24,12 +27,15 @@ export interface Room {
   roundStartTime: number | null;
   submittedCount: number;
   roundResults: RoundResult[] | null;
+  difficulty: Difficulty;
+  hasAI: boolean;
 }
 
 export interface RoundResult {
   playerId: string;
   playerName: string;
   skin: string;
+  isAI: boolean;
   answers: Record<string, { text: string; points: number; status: "correct" | "duplicate" | "empty" }>;
   roundScore: number;
   totalScore: number;
@@ -47,7 +53,13 @@ function generateRoomCode(): string {
   return code;
 }
 
-export function createRoom(hostId: string, hostName: string, hostSkin: string): Room {
+export function createRoom(
+  hostId: string,
+  hostName: string,
+  hostSkin: string,
+  difficulty: Difficulty = "normal",
+  withAI: boolean = false
+): Room {
   const code = generateRoomCode();
   const room: Room = {
     id: code,
@@ -63,17 +75,45 @@ export function createRoom(hostId: string, hostName: string, hostSkin: string): 
         ready: false,
         answers: {},
         coins: 0,
+        isAI: false,
       },
     ],
     status: "waiting",
     currentLetter: "",
     round: 0,
     maxRounds: 3,
-    timeLimit: 120,
+    timeLimit: difficulty === "easy" ? 150 : difficulty === "hard" ? 90 : 120,
     roundStartTime: null,
     submittedCount: 0,
     roundResults: null,
+    difficulty,
+    hasAI: withAI,
   };
+
+  if (withAI) {
+    const aiNames: Record<Difficulty, string> = {
+      easy: "روبوت مبتدئ",
+      normal: "روبوت ذكي",
+      hard: "روبوت خبير",
+    };
+    const aiSkins: Record<Difficulty, string> = {
+      easy: "default",
+      normal: "scholar",
+      hard: "legend",
+    };
+    room.players.push({
+      id: "AI_BOT",
+      name: aiNames[difficulty],
+      skin: aiSkins[difficulty],
+      score: 0,
+      totalScore: 0,
+      ready: true,
+      answers: {},
+      coins: 0,
+      isAI: true,
+    });
+  }
+
   rooms.set(code, room);
   return room;
 }
@@ -87,7 +127,7 @@ export function joinRoom(
   const room = rooms.get(roomCode.toUpperCase());
   if (!room) return { success: false, error: "الغرفة غير موجودة" };
   if (room.status !== "waiting") return { success: false, error: "اللعبة بدأت بالفعل" };
-  if (room.players.length >= 8) return { success: false, error: "الغرفة ممتلئة" };
+  if (room.players.filter((p) => !p.isAI).length >= 8) return { success: false, error: "الغرفة ممتلئة" };
   if (room.players.find((p) => p.id === playerId)) {
     return { success: true, room };
   }
@@ -101,6 +141,7 @@ export function joinRoom(
     ready: false,
     answers: {},
     coins: 0,
+    isAI: false,
   });
 
   return { success: true, room };
@@ -110,12 +151,13 @@ export function leaveRoom(roomCode: string, playerId: string): Room | null {
   const room = rooms.get(roomCode);
   if (!room) return null;
   room.players = room.players.filter((p) => p.id !== playerId);
-  if (room.players.length === 0) {
+  if (room.players.filter((p) => !p.isAI).length === 0) {
     rooms.delete(roomCode);
     return null;
   }
-  if (room.hostId === playerId && room.players.length > 0) {
-    room.hostId = room.players[0].id;
+  if (room.hostId === playerId) {
+    const human = room.players.find((p) => !p.isAI);
+    if (human) room.hostId = human.id;
   }
   return room;
 }
@@ -123,11 +165,12 @@ export function leaveRoom(roomCode: string, playerId: string): Room | null {
 export function startGame(roomCode: string): { success: boolean; room?: Room; error?: string } {
   const room = rooms.get(roomCode);
   if (!room) return { success: false, error: "الغرفة غير موجودة" };
-  if (room.players.length < 2) return { success: false, error: "تحتاج إلى لاعبين أو أكثر" };
+  const humanCount = room.players.filter((p) => !p.isAI).length;
+  if (humanCount < 1) return { success: false, error: "لا يوجد لاعبون بشريون" };
 
   room.status = "playing";
   room.round = 1;
-  room.currentLetter = getRandomLetter();
+  room.currentLetter = getRandomLetter(room.difficulty);
   room.roundStartTime = Date.now();
   room.submittedCount = 0;
 
@@ -137,6 +180,14 @@ export function startGame(roomCode: string): { success: boolean; room?: Room; er
   });
 
   return { success: true, room };
+}
+
+export function generateAIAnswers(room: Room): Record<string, string> {
+  const answers: Record<string, string> = {};
+  for (const cat of CATEGORIES) {
+    answers[cat] = getAIAnswer(room.currentLetter, cat, room.difficulty);
+  }
+  return answers;
 }
 
 export function submitAnswers(
@@ -150,7 +201,6 @@ export function submitAnswers(
     player.answers = answers;
     room.submittedCount++;
   }
-
   const allSubmitted = room.submittedCount >= room.players.length;
   return { allSubmitted, room };
 }
@@ -164,6 +214,7 @@ export function calculateResults(roomCode: string): { room: Room; results: Round
       playerId: player.id,
       playerName: player.name,
       skin: player.skin,
+      isAI: player.isAI,
       answers: {},
       roundScore: 0,
       totalScore: 0,
@@ -171,7 +222,6 @@ export function calculateResults(roomCode: string): { room: Room; results: Round
 
     for (const category of CATEGORIES) {
       const answer = (player.answers[category] || "").trim();
-
       if (!answer) {
         playerResult.answers[category] = { text: "", points: 0, status: "empty" };
         continue;
@@ -221,7 +271,7 @@ export function nextRound(roomCode: string): { finished: boolean; room: Room } {
   }
 
   room.round++;
-  room.currentLetter = getRandomLetter();
+  room.currentLetter = getRandomLetter(room.difficulty);
   room.roundStartTime = Date.now();
   room.submittedCount = 0;
   room.status = "playing";
@@ -248,6 +298,7 @@ export function getRoomPublicData(room: Room) {
       skin: p.skin,
       totalScore: p.totalScore,
       ready: p.ready,
+      isAI: p.isAI,
     })),
     status: room.status,
     currentLetter: room.currentLetter,
@@ -255,5 +306,7 @@ export function getRoomPublicData(room: Room) {
     maxRounds: room.maxRounds,
     timeLimit: room.timeLimit,
     roundResults: room.roundResults,
+    difficulty: room.difficulty,
+    hasAI: room.hasAI,
   };
 }

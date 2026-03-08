@@ -9,16 +9,18 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
+  Switch,
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { usePlayer } from "@/context/PlayerContext";
 import { useSocket } from "@/context/SocketContext";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
+import type { Difficulty } from "@/context/PlayerContext";
 
 interface RoomPlayer {
   id: string;
@@ -26,6 +28,7 @@ interface RoomPlayer {
   skin: string;
   totalScore: number;
   ready: boolean;
+  isAI?: boolean;
 }
 
 interface Room {
@@ -37,26 +40,37 @@ interface Room {
   round: number;
   maxRounds: number;
   timeLimit: number;
+  difficulty: Difficulty;
+  hasAI: boolean;
 }
+
+const DIFFICULTY_CONFIG: Record<Difficulty, { label: string; color: string; icon: any; desc: string }> = {
+  easy:   { label: "سهل",   color: "#27AE60", icon: "leaf-outline",   desc: "150 ثانية" },
+  normal: { label: "عادي",  color: "#F5A623", icon: "flash-outline",  desc: "120 ثانية" },
+  hard:   { label: "صعب",   color: "#E74C3C", icon: "flame-outline",  desc: "90 ثانية"  },
+};
 
 export default function LobbyScreen() {
   const insets = useSafeAreaInsets();
-  const { player } = usePlayer();
+  const { player, setDifficulty } = usePlayer();
   const { socket, isConnected } = useSocket();
-  const [mode, setMode] = useState<"menu" | "create" | "join" | "room">("menu");
+
+  const [mode, setMode] = useState<"menu" | "join" | "room">("menu");
   const [joinCode, setJoinCode] = useState("");
   const [room, setRoom] = useState<Room | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty>(player.difficulty || "normal");
+  const [withAI, setWithAI] = useState(false);
   const socketIdRef = useRef<string>("");
 
   const topInset = Platform.OS === "web" ? 67 : insets.top;
 
   useEffect(() => {
     if (!socket) return;
+    if (socket.id) socketIdRef.current = socket.id;
 
-    socket.on("connect", () => {
-      socketIdRef.current = socket.id || "";
-    });
+    const onConnect = () => { socketIdRef.current = socket.id || ""; };
+    socket.on("connect", onConnect);
 
     socket.on("room_created", ({ room: r }) => {
       setRoom(r);
@@ -70,9 +84,7 @@ export default function LobbyScreen() {
       setIsLoading(false);
     });
 
-    socket.on("room_updated", ({ room: r }) => {
-      setRoom(r);
-    });
+    socket.on("room_updated", ({ room: r }) => setRoom(r));
 
     socket.on("game_started", (gameData) => {
       router.replace({
@@ -84,6 +96,7 @@ export default function LobbyScreen() {
           timeLimit: String(gameData.timeLimit),
           round: String(gameData.round),
           maxRounds: String(gameData.maxRounds),
+          difficulty: gameData.difficulty || "normal",
         },
       });
     });
@@ -93,9 +106,8 @@ export default function LobbyScreen() {
       Alert.alert("خطأ", message);
     });
 
-    if (socket.id) socketIdRef.current = socket.id;
-
     return () => {
+      socket.off("connect", onConnect);
       socket.off("room_created");
       socket.off("room_joined");
       socket.off("room_updated");
@@ -112,9 +124,12 @@ export default function LobbyScreen() {
     }
     setIsLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setDifficulty(selectedDifficulty);
     socket?.emit("create_room", {
       playerName: player.name,
       playerSkin: player.currentSkin,
+      difficulty: selectedDifficulty,
+      withAI,
     });
   };
 
@@ -138,8 +153,9 @@ export default function LobbyScreen() {
 
   const handleStartGame = () => {
     if (!room) return;
-    if (room.players.length < 2) {
-      Alert.alert("لاعبون غير كافيون", "تحتاج لاعبين على الأقل لبدء اللعبة");
+    const humanCount = room.players.filter((p) => !p.isAI).length;
+    if (humanCount < 1) {
+      Alert.alert("خطأ", "لا يوجد لاعبون كافيون");
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
@@ -147,9 +163,7 @@ export default function LobbyScreen() {
   };
 
   const handleLeaveRoom = () => {
-    if (room) {
-      socket?.emit("leave_room", { roomCode: room.code });
-    }
+    if (room) socket?.emit("leave_room", { roomCode: room.code });
     setRoom(null);
     setMode("menu");
   };
@@ -158,6 +172,7 @@ export default function LobbyScreen() {
   const isHost = room?.hostId === myId;
 
   if (mode === "room" && room) {
+    const diffCfg = DIFFICULTY_CONFIG[room.difficulty] || DIFFICULTY_CONFIG.normal;
     return (
       <LinearGradient colors={["#0D0625", "#1A0D40", "#2D1B69"]} style={styles.container}>
         <View style={[styles.roomHeader, { paddingTop: topInset + 12 }]}>
@@ -171,27 +186,42 @@ export default function LobbyScreen() {
           <View style={{ width: 40 }} />
         </View>
 
-        <View style={styles.roundInfo}>
-          <Ionicons name="refresh" size={16} color={Colors.textMuted} />
-          <Text style={styles.roundInfoText}>{room.maxRounds} جولات</Text>
-          <Ionicons name="time" size={16} color={Colors.textMuted} />
-          <Text style={styles.roundInfoText}>{room.timeLimit} ثانية</Text>
+        <View style={styles.roomMeta}>
+          <View style={[styles.metaBadge, { borderColor: diffCfg.color + "60" }]}>
+            <Ionicons name={diffCfg.icon} size={14} color={diffCfg.color} />
+            <Text style={[styles.metaText, { color: diffCfg.color }]}>{diffCfg.label}</Text>
+          </View>
+          <View style={styles.metaBadge}>
+            <Ionicons name="time-outline" size={14} color={Colors.textMuted} />
+            <Text style={styles.metaText}>{diffCfg.desc}</Text>
+          </View>
+          <View style={styles.metaBadge}>
+            <Ionicons name="refresh-outline" size={14} color={Colors.textMuted} />
+            <Text style={styles.metaText}>{room.maxRounds} جولات</Text>
+          </View>
+          {room.hasAI && (
+            <View style={[styles.metaBadge, { borderColor: Colors.accent + "60" }]}>
+              <MaterialCommunityIcons name="robot-outline" size={14} color={Colors.accent} />
+              <Text style={[styles.metaText, { color: Colors.accent }]}>ذكاء اصطناعي</Text>
+            </View>
+          )}
         </View>
 
         <Text style={styles.playersTitle}>اللاعبون ({room.players.length}/8)</Text>
 
-        <ScrollView
-          contentContainerStyle={styles.playersList}
-          showsVerticalScrollIndicator={false}
-        >
+        <ScrollView contentContainerStyle={styles.playersList} showsVerticalScrollIndicator={false}>
           {room.players.map((p) => (
-            <PlayerRow key={p.id} player={p} isHost={p.id === room.hostId} isMe={p.id === myId} />
+            <PlayerRow
+              key={p.id}
+              player={p}
+              isHost={p.id === room.hostId}
+              isMe={p.id === myId}
+            />
           ))}
-
           <View style={styles.waitingBox}>
-            <Ionicons name="people-outline" size={20} color={Colors.textMuted} />
+            <Ionicons name="people-outline" size={18} color={Colors.textMuted} />
             <Text style={styles.waitingText}>
-              {room.players.length < 2
+              {room.players.filter((p) => !p.isAI).length < 2 && !room.hasAI
                 ? "في انتظار المزيد من اللاعبين..."
                 : "جاهز للبدء!"}
             </Text>
@@ -202,15 +232,10 @@ export default function LobbyScreen() {
           {isHost ? (
             <Pressable
               onPress={handleStartGame}
-              disabled={room.players.length < 2}
-              style={({ pressed }) => [
-                styles.startBtn,
-                pressed && { opacity: 0.85 },
-                room.players.length < 2 && styles.startBtnDisabled,
-              ]}
+              style={({ pressed }) => [styles.startBtn, pressed && { opacity: 0.85 }]}
             >
               <LinearGradient
-                colors={room.players.length >= 2 ? ["#F5A623", "#FF6B35"] : ["#555", "#555"]}
+                colors={["#F5A623", "#FF6B35"]}
                 style={styles.startBtnGrad}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
@@ -240,50 +265,99 @@ export default function LobbyScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      <View style={styles.centerContent}>
-        {!isConnected && (
-          <View style={styles.connectionBadge}>
-            <ActivityIndicator size="small" color={Colors.error} />
-            <Text style={styles.connectionText}>جارٍ الاتصال...</Text>
-          </View>
-        )}
+      {!isConnected && (
+        <View style={styles.connectionBadge}>
+          <ActivityIndicator size="small" color={Colors.error} />
+          <Text style={styles.connectionText}>جارٍ الاتصال...</Text>
+        </View>
+      )}
 
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         {mode === "menu" && (
-          <View style={styles.menuOptions}>
-            <Pressable
-              onPress={() => { setMode("create"); handleCreateRoom(); }}
-              disabled={isLoading}
-              style={({ pressed }) => [styles.menuBtn, pressed && { opacity: 0.85 }]}
-            >
-              <LinearGradient
-                colors={["#F5A623", "#FF6B35"]}
-                style={styles.menuBtnGrad}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Ionicons name="add-circle" size={32} color="#fff" />
-                )}
-                <Text style={styles.menuBtnText}>إنشاء غرفة</Text>
-                <Text style={styles.menuBtnSub}>أنت المضيف</Text>
-              </LinearGradient>
-            </Pressable>
+          <>
+            <View style={styles.difficultySection}>
+              <Text style={styles.sectionLabel}>مستوى الصعوبة</Text>
+              <View style={styles.difficultyRow}>
+                {(["easy", "normal", "hard"] as Difficulty[]).map((d) => {
+                  const cfg = DIFFICULTY_CONFIG[d];
+                  const active = selectedDifficulty === d;
+                  return (
+                    <Pressable
+                      key={d}
+                      onPress={() => { setSelectedDifficulty(d); Haptics.selectionAsync(); }}
+                      style={[
+                        styles.diffBtn,
+                        { borderColor: active ? cfg.color : Colors.border },
+                        active && { backgroundColor: cfg.color + "25" },
+                      ]}
+                    >
+                      <Ionicons name={cfg.icon} size={22} color={active ? cfg.color : Colors.textMuted} />
+                      <Text style={[styles.diffLabel, { color: active ? cfg.color : Colors.textMuted }]}>
+                        {cfg.label}
+                      </Text>
+                      <Text style={[styles.diffDesc, { color: active ? cfg.color + "AA" : Colors.textMuted }]}>
+                        {cfg.desc}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
 
-            <Pressable
-              onPress={() => setMode("join")}
-              style={({ pressed }) => [
-                styles.menuBtn,
-                styles.menuBtnJoin,
-                pressed && { opacity: 0.85 },
-              ]}
-            >
-              <Ionicons name="enter" size={32} color={Colors.accent} />
-              <Text style={styles.menuBtnText}>الانضمام لغرفة</Text>
-              <Text style={[styles.menuBtnSub, { color: Colors.textSecondary }]}>أدخل كود الغرفة</Text>
-            </Pressable>
-          </View>
+            <View style={styles.aiSection}>
+              <View style={styles.aiRow}>
+                <View style={styles.aiInfo}>
+                  <MaterialCommunityIcons name="robot-outline" size={22} color={Colors.accent} />
+                  <View>
+                    <Text style={styles.aiLabel}>العب ضد الذكاء الاصطناعي</Text>
+                    <Text style={styles.aiSubLabel}>يُضاف روبوت حسب المستوى المختار</Text>
+                  </View>
+                </View>
+                <Switch
+                  value={withAI}
+                  onValueChange={(v) => { setWithAI(v); Haptics.selectionAsync(); }}
+                  trackColor={{ false: Colors.border, true: Colors.accent + "80" }}
+                  thumbColor={withAI ? Colors.accent : Colors.textMuted}
+                />
+              </View>
+            </View>
+
+            <View style={styles.menuOptions}>
+              <Pressable
+                onPress={handleCreateRoom}
+                disabled={isLoading}
+                style={({ pressed }) => [styles.menuBtn, pressed && { opacity: 0.85 }]}
+              >
+                <LinearGradient
+                  colors={["#F5A623", "#FF6B35"]}
+                  style={styles.menuBtnGrad}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color="#fff" size="large" />
+                  ) : (
+                    <Ionicons name="add-circle" size={32} color="#fff" />
+                  )}
+                  <Text style={styles.menuBtnText}>إنشاء غرفة</Text>
+                  <Text style={styles.menuBtnSub}>أنت المضيف</Text>
+                </LinearGradient>
+              </Pressable>
+
+              <Pressable
+                onPress={() => setMode("join")}
+                style={({ pressed }) => [styles.menuBtnJoin, pressed && { opacity: 0.85 }]}
+              >
+                <Ionicons name="enter" size={32} color={Colors.accent} />
+                <Text style={styles.menuBtnText}>الانضمام لغرفة</Text>
+                <Text style={[styles.menuBtnSub, { color: Colors.textSecondary }]}>أدخل كود الغرفة</Text>
+              </Pressable>
+            </View>
+          </>
         )}
 
         {mode === "join" && (
@@ -293,11 +367,12 @@ export default function LobbyScreen() {
               style={styles.codeInput}
               value={joinCode}
               onChangeText={(t) => setJoinCode(t.toUpperCase())}
-              placeholder="مثال: ABCD"
+              placeholder="ABCD"
               placeholderTextColor={Colors.textMuted}
               maxLength={4}
               autoCapitalize="characters"
               textAlign="center"
+              autoFocus
             />
             <View style={styles.joinActions}>
               <Pressable
@@ -311,33 +386,21 @@ export default function LobbyScreen() {
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                 >
-                  {isLoading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.joinBtnText}>انضم الآن</Text>
-                  )}
+                  {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.joinBtnText}>انضم الآن</Text>}
                 </LinearGradient>
               </Pressable>
               <Pressable onPress={() => setMode("menu")} style={styles.cancelBtn}>
-                <Text style={styles.cancelBtnText}>إلغاء</Text>
+                <Text style={styles.cancelBtnText}>رجوع</Text>
               </Pressable>
             </View>
           </View>
         )}
-      </View>
+      </ScrollView>
     </LinearGradient>
   );
 }
 
-function PlayerRow({
-  player,
-  isHost,
-  isMe,
-}: {
-  player: RoomPlayer;
-  isHost: boolean;
-  isMe: boolean;
-}) {
+function PlayerRow({ player, isHost, isMe }: { player: RoomPlayer; isHost: boolean; isMe: boolean }) {
   return (
     <View style={[styles.playerRow, isMe && styles.playerRowMe]}>
       <PlayerAvatar skinId={player.skin} size={44} />
@@ -345,7 +408,13 @@ function PlayerRow({
         {player.name}
         {isMe ? " (أنت)" : ""}
       </Text>
-      {isHost && (
+      {player.isAI && (
+        <View style={styles.aiBadge}>
+          <MaterialCommunityIcons name="robot-outline" size={12} color={Colors.accent} />
+          <Text style={styles.aiBadgeText}>AI</Text>
+        </View>
+      )}
+      {isHost && !player.isAI && (
         <View style={styles.hostBadge}>
           <Ionicons name="star" size={12} color={Colors.gold} />
           <Text style={styles.hostBadgeText}>مضيف</Text>
@@ -362,7 +431,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingBottom: 12,
   },
   backBtn: {
     width: 40,
@@ -373,7 +442,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   title: { color: Colors.text, fontSize: 22, fontFamily: "Inter_700Bold" },
-  centerContent: { flex: 1, paddingHorizontal: 20, justifyContent: "center" },
   connectionBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -382,29 +450,57 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.error + "30",
     padding: 10,
     borderRadius: 12,
-    marginBottom: 20,
+    marginHorizontal: 20,
+    marginBottom: 8,
   },
   connectionText: { color: Colors.error, fontSize: 14, fontFamily: "Inter_500Medium" },
-  menuOptions: { gap: 20 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 40, gap: 16 },
+  difficultySection: { gap: 10 },
+  sectionLabel: { color: Colors.textSecondary, fontSize: 14, fontFamily: "Inter_600SemiBold", textAlign: "right" },
+  difficultyRow: { flexDirection: "row", gap: 10 },
+  diffBtn: {
+    flex: 1,
+    backgroundColor: Colors.card,
+    borderRadius: 16,
+    padding: 14,
+    alignItems: "center",
+    gap: 4,
+    borderWidth: 2,
+  },
+  diffLabel: { fontSize: 14, fontFamily: "Inter_700Bold" },
+  diffDesc: { fontSize: 11, fontFamily: "Inter_400Regular" },
+  aiSection: {
+    backgroundColor: Colors.card,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  aiRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  aiInfo: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
+  aiLabel: { color: Colors.text, fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  aiSubLabel: { color: Colors.textMuted, fontSize: 12, fontFamily: "Inter_400Regular" },
+  menuOptions: { gap: 14 },
   menuBtn: { borderRadius: 24, overflow: "hidden" },
   menuBtnGrad: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 32,
+    paddingVertical: 28,
     gap: 8,
   },
   menuBtnJoin: {
     backgroundColor: Colors.card,
     borderWidth: 2,
     borderColor: Colors.accent + "60",
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 32,
+    paddingVertical: 28,
     gap: 8,
   },
-  menuBtnText: { color: "#fff", fontSize: 22, fontFamily: "Inter_700Bold" },
-  menuBtnSub: { color: "rgba(255,255,255,0.7)", fontSize: 14, fontFamily: "Inter_400Regular" },
-  joinContainer: { alignItems: "center", gap: 20 },
+  menuBtnText: { color: "#fff", fontSize: 20, fontFamily: "Inter_700Bold" },
+  menuBtnSub: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontFamily: "Inter_400Regular" },
+  joinContainer: { alignItems: "center", gap: 20, paddingTop: 20 },
   joinTitle: { color: Colors.text, fontSize: 22, fontFamily: "Inter_700Bold" },
   codeInput: {
     backgroundColor: Colors.card,
@@ -417,8 +513,7 @@ const styles = StyleSheet.create({
     letterSpacing: 12,
     borderWidth: 2,
     borderColor: Colors.accent,
-    width: 200,
-    textAlign: "center",
+    width: 220,
   },
   joinActions: { gap: 12, width: "100%" },
   joinBtn: { borderRadius: 16, overflow: "hidden" },
@@ -436,21 +531,32 @@ const styles = StyleSheet.create({
   roomCodeBox: { alignItems: "center" },
   roomCodeLabel: { color: Colors.textMuted, fontSize: 11, fontFamily: "Inter_400Regular" },
   roomCode: { color: Colors.secondary, fontSize: 28, fontFamily: "Inter_700Bold", letterSpacing: 4 },
-  roundInfo: {
+  roomMeta: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+    flexWrap: "wrap",
     gap: 8,
-    paddingVertical: 8,
-    marginBottom: 4,
-  },
-  roundInfoText: { color: Colors.textMuted, fontSize: 13, fontFamily: "Inter_400Regular" },
-  playersTitle: {
-    color: Colors.text,
-    fontSize: 18,
-    fontFamily: "Inter_600SemiBold",
     paddingHorizontal: 20,
     marginBottom: 8,
+    justifyContent: "center",
+  },
+  metaBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: Colors.card,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  metaText: { color: Colors.textMuted, fontSize: 12, fontFamily: "Inter_500Medium" },
+  playersTitle: {
+    color: Colors.text,
+    fontSize: 17,
+    fontFamily: "Inter_600SemiBold",
+    paddingHorizontal: 20,
+    marginBottom: 6,
     textAlign: "right",
   },
   playersList: { paddingHorizontal: 20, gap: 10, paddingBottom: 20 },
@@ -465,7 +571,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   playerRowMe: { borderColor: Colors.accent + "80" },
-  playerRowName: { flex: 1, color: Colors.text, fontSize: 16, fontFamily: "Inter_600SemiBold", textAlign: "right" },
+  playerRowName: { flex: 1, color: Colors.text, fontSize: 15, fontFamily: "Inter_600SemiBold", textAlign: "right" },
   hostBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -476,14 +582,24 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   hostBadgeText: { color: Colors.gold, fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  aiBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: Colors.accent + "20",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  aiBadgeText: { color: Colors.accent, fontSize: 11, fontFamily: "Inter_700Bold" },
   waitingBox: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    paddingVertical: 16,
+    paddingVertical: 14,
   },
-  waitingText: { color: Colors.textMuted, fontSize: 14, fontFamily: "Inter_400Regular" },
+  waitingText: { color: Colors.textMuted, fontSize: 13, fontFamily: "Inter_400Regular" },
   bottomBar: {
     paddingHorizontal: 20,
     paddingTop: 16,
@@ -491,7 +607,6 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.border,
   },
   startBtn: { borderRadius: 16, overflow: "hidden" },
-  startBtnDisabled: { opacity: 0.5 },
   startBtnGrad: {
     flexDirection: "row",
     alignItems: "center",
@@ -501,5 +616,5 @@ const styles = StyleSheet.create({
   },
   startBtnText: { color: "#fff", fontSize: 20, fontFamily: "Inter_700Bold" },
   waitingForHost: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12 },
-  waitingForHostText: { color: Colors.textMuted, fontSize: 15, fontFamily: "Inter_400Regular" },
+  waitingForHostText: { color: Colors.textMuted, fontSize: 14, fontFamily: "Inter_400Regular" },
 });

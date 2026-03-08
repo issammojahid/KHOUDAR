@@ -12,6 +12,8 @@ export const SKINS = [
   { id: "legend", name: "الأسطوري", color: "#C0392B", icon: "fire", price: 1000 },
 ];
 
+export type Difficulty = "easy" | "normal" | "hard";
+
 export interface PlayerData {
   name: string;
   coins: number;
@@ -20,6 +22,7 @@ export interface PlayerData {
   totalWins: number;
   totalGames: number;
   bestScore: number;
+  difficulty: Difficulty;
 }
 
 interface PlayerContextValue {
@@ -30,6 +33,7 @@ interface PlayerContextValue {
   setSkin: (skinId: string) => void;
   buySkin: (skinId: string) => boolean;
   recordGame: (score: number, won: boolean) => void;
+  setDifficulty: (d: Difficulty) => void;
   isLoaded: boolean;
 }
 
@@ -41,6 +45,7 @@ const defaultPlayer: PlayerData = {
   totalWins: 0,
   totalGames: 0,
   bestScore: 0,
+  difficulty: "normal",
 };
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -106,8 +111,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const setDifficulty = (d: Difficulty) => {
+    savePlayer({ ...player, difficulty: d });
+  };
+
   const value = useMemo(
-    () => ({ player, setName, addCoins, spendCoins, setSkin, buySkin, recordGame, isLoaded }),
+    () => ({ player, setName, addCoins, spendCoins, setSkin, buySkin, recordGame, setDifficulty, isLoaded }),
     [player, isLoaded]
   );
 
