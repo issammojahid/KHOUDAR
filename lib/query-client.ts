@@ -3,15 +3,15 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 /**
  * Gets the base URL for the Express API server
- * Uses EXPO_PUBLIC_DOMAIN if available (Expo Go dev), fallback to localhost:5000
+ * Uses EXPO_PUBLIC_DOMAIN if available (Expo Go dev), fallback to Railway production
  * @returns {string} The API base URL
  */
 export function getApiUrl(): string {
   let host = process.env.EXPO_PUBLIC_DOMAIN;
 
   if (!host) {
-    // Default: localhost with port 5000
-    return "http://localhost:5000";
+    // Production: use Railway server
+    return "https://huroof-f-magherib-production.up.railway.app";
   }
 
   // For Replit dev domain, add port 5000
