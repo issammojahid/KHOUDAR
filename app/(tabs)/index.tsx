@@ -123,6 +123,8 @@ export default function HomeScreen() {
         <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
           <Pressable
             onPress={handlePlay}
+            testID="play-button"
+            accessibilityLabel="العب الآن"
             style={({ pressed }) => [styles.playButton, pressed && styles.playButtonPressed]}
           >
             <LinearGradient

@@ -387,6 +387,7 @@ export default function LobbyScreen() {
               <Pressable
                 onPress={handleFindMatch}
                 disabled={isLoading}
+                testID="play-online-button"
                 style={({ pressed }) => [styles.menuBtn, pressed && { opacity: 0.85 }]}
               >
                 <LinearGradient
@@ -404,6 +405,7 @@ export default function LobbyScreen() {
               <Pressable
                 onPress={handleCreateRoom}
                 disabled={isLoading}
+                testID="create-room-button"
                 style={({ pressed }) => [styles.menuBtn, pressed && { opacity: 0.85 }]}
               >
                 <LinearGradient
