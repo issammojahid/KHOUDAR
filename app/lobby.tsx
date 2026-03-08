@@ -55,13 +55,14 @@ export default function LobbyScreen() {
   const { player, setDifficulty } = usePlayer();
   const { socket, isConnected } = useSocket();
 
-  const [mode, setMode] = useState<"menu" | "join" | "room">("menu");
+  const [mode, setMode] = useState<"menu" | "join" | "room" | "matchmaking">("menu");
   const [joinCode, setJoinCode] = useState("");
   const [room, setRoom] = useState<Room | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty>(player.difficulty || "normal");
   const [withAI, setWithAI] = useState(false);
   const socketIdRef = useRef<string>("");
+  const [searchDots, setSearchDots] = useState("");
 
   const topInset = Platform.OS === "web" ? 67 : insets.top;
 
@@ -72,25 +73,25 @@ export default function LobbyScreen() {
     const onConnect = () => { socketIdRef.current = socket.id || ""; };
     socket.on("connect", onConnect);
 
-    socket.on("room_created", ({ room: r }) => {
+    const onRoomCreated = ({ room: r }: any) => {
       setRoom(r);
       setMode("room");
       setIsLoading(false);
-    });
+    };
 
-    socket.on("room_joined", ({ room: r }) => {
+    const onRoomJoined = ({ room: r }: any) => {
       setRoom(r);
       setMode("room");
       setIsLoading(false);
-    });
+    };
 
-    socket.on("room_updated", ({ room: r }) => setRoom(r));
+    const onRoomUpdated = ({ room: r }: any) => setRoom(r);
 
-    socket.on("game_started", (gameData) => {
+    const onGameStarted = (gameData: any) => {
       router.replace({
         pathname: "/game",
         params: {
-          roomCode: room?.code || "",
+          roomCode: room?.code || gameData.roomCode || "",
           letter: gameData.letter,
           categories: JSON.stringify(gameData.categories),
           timeLimit: String(gameData.timeLimit),
@@ -100,20 +101,43 @@ export default function LobbyScreen() {
           hostId: gameData.hostId || "",
         },
       });
-    });
+    };
 
-    socket.on("error", ({ message }) => {
+    const onMatchFound = ({ room: r }: any) => {
+      setRoom(r);
+      setMode("room");
+      setIsLoading(false);
+    };
+
+    const onMatchStatus = ({ status }: any) => {
+      if (status === "cancelled" && !room) {
+        setMode("menu");
+        setIsLoading(false);
+      }
+    };
+
+    const onError = ({ message }: any) => {
       setIsLoading(false);
       Alert.alert("خطأ", message);
-    });
+    };
+
+    socket.on("room_created", onRoomCreated);
+    socket.on("room_joined", onRoomJoined);
+    socket.on("room_updated", onRoomUpdated);
+    socket.on("game_started", onGameStarted);
+    socket.on("match_found", onMatchFound);
+    socket.on("matchmaking_status", onMatchStatus);
+    socket.on("error", onError);
 
     return () => {
       socket.off("connect", onConnect);
-      socket.off("room_created");
-      socket.off("room_joined");
-      socket.off("room_updated");
-      socket.off("game_started");
-      socket.off("error");
+      socket.off("room_created", onRoomCreated);
+      socket.off("room_joined", onRoomJoined);
+      socket.off("room_updated", onRoomUpdated);
+      socket.off("game_started", onGameStarted);
+      socket.off("match_found", onMatchFound);
+      socket.off("matchmaking_status", onMatchStatus);
+      socket.off("error", onError);
     };
   }, [socket, room?.code]);
 
@@ -162,6 +186,36 @@ export default function LobbyScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     socket?.emit("start_game", { roomCode: room.code });
   };
+
+  const handleFindMatch = () => {
+    if (!player.name) {
+      Alert.alert("تحتاج اسم", "يرجى تعيين اسمك في الإعدادات أولاً");
+      router.push("/(tabs)/settings");
+      return;
+    }
+    setMode("matchmaking");
+    setIsLoading(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    socket?.emit("find_match", {
+      playerName: player.name,
+      playerSkin: player.currentSkin,
+    });
+  };
+
+  const handleCancelMatch = () => {
+    socket?.emit("cancel_match");
+    setMode("menu");
+    setIsLoading(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  useEffect(() => {
+    if (mode !== "matchmaking") return;
+    const interval = setInterval(() => {
+      setSearchDots((prev) => (prev.length >= 3 ? "" : prev + "."));
+    }, 500);
+    return () => clearInterval(interval);
+  }, [mode]);
 
   const handleLeaveRoom = () => {
     if (room) socket?.emit("leave_room", { roomCode: room.code });
@@ -329,6 +383,23 @@ export default function LobbyScreen() {
 
             <View style={styles.menuOptions}>
               <Pressable
+                onPress={handleFindMatch}
+                disabled={isLoading}
+                style={({ pressed }) => [styles.menuBtn, pressed && { opacity: 0.85 }]}
+              >
+                <LinearGradient
+                  colors={["#8E2DE2", "#4A00E0"]}
+                  style={styles.menuBtnGrad}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <Ionicons name="globe" size={32} color="#fff" />
+                  <Text style={styles.menuBtnText}>العب أونلاين</Text>
+                  <Text style={styles.menuBtnSub}>ابحث عن خصم تلقائياً</Text>
+                </LinearGradient>
+              </Pressable>
+
+              <Pressable
                 onPress={handleCreateRoom}
                 disabled={isLoading}
                 style={({ pressed }) => [styles.menuBtn, pressed && { opacity: 0.85 }]}
@@ -394,6 +465,22 @@ export default function LobbyScreen() {
                 <Text style={styles.cancelBtnText}>رجوع</Text>
               </Pressable>
             </View>
+          </View>
+        )}
+
+        {mode === "matchmaking" && (
+          <View style={styles.matchmakingContainer}>
+            <View style={styles.matchmakingCircle}>
+              <ActivityIndicator size="large" color="#8E2DE2" />
+            </View>
+            <Text style={styles.matchmakingTitle}>جارٍ البحث عن خصم{searchDots}</Text>
+            <Text style={styles.matchmakingSubtitle}>يرجى الانتظار حتى يتم إيجاد لاعب آخر</Text>
+            <Pressable
+              onPress={handleCancelMatch}
+              style={({ pressed }) => [styles.cancelMatchBtn, pressed && { opacity: 0.85 }]}
+            >
+              <Text style={styles.cancelMatchText}>إلغاء البحث</Text>
+            </Pressable>
           </View>
         )}
       </ScrollView>
@@ -618,4 +705,28 @@ const styles = StyleSheet.create({
   startBtnText: { color: "#fff", fontSize: 20, fontFamily: "Inter_700Bold" },
   waitingForHost: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12 },
   waitingForHostText: { color: Colors.textMuted, fontSize: 14, fontFamily: "Inter_400Regular" },
+  matchmakingContainer: { alignItems: "center", gap: 20, paddingTop: 40 },
+  matchmakingCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "rgba(142, 45, 226, 0.15)",
+    borderWidth: 2,
+    borderColor: "rgba(142, 45, 226, 0.4)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  matchmakingTitle: { color: Colors.text, fontSize: 22, fontFamily: "Inter_700Bold", textAlign: "center" },
+  matchmakingSubtitle: { color: Colors.textMuted, fontSize: 14, fontFamily: "Inter_400Regular", textAlign: "center" },
+  cancelMatchBtn: {
+    backgroundColor: Colors.card,
+    borderRadius: 16,
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: Colors.error + "60",
+    marginTop: 12,
+  },
+  cancelMatchText: { color: Colors.error, fontSize: 16, fontFamily: "Inter_600SemiBold" },
 });

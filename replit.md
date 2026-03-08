@@ -77,11 +77,24 @@ components/
 - Chat button visible during gameplay
 - Server validates sender is in the room before broadcasting
 
+## Online Matchmaking
+
+- "Play Online" button in lobby joins a server-side queue
+- When 2 players are in queue, server auto-creates a room and starts the game after 3s
+- Players see a searching animation while waiting; can cancel anytime
+- Matchmaking games use "normal" difficulty by default
+
+## Trial Reward
+
+- One-time welcome bonus of 200 coins shown as a modal on first app open
+- Tracked via `claimedTrialReward` in PlayerData (persisted in AsyncStorage)
+- Cannot be claimed more than once
+
 ## Socket Events
 
-Client -> Server: `create_room`, `join_room`, `start_game`, `submit_answers`, `next_round`, `leave_room`, `chat_message`
+Client -> Server: `create_room`, `join_room`, `find_match`, `cancel_match`, `start_game`, `submit_answers`, `next_round`, `leave_room`, `chat_message`
 
-Server -> Client: `room_created`, `room_joined`, `room_updated`, `game_started`, `round_ended`, `game_finished`, `player_submitted`, `chat_message`, `error`
+Server -> Client: `room_created`, `room_joined`, `room_updated`, `game_started`, `round_ended`, `game_finished`, `player_submitted`, `match_found`, `matchmaking_status`, `chat_message`, `error`
 
 ## Design
 

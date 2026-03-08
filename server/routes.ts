@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "node:http";
-import { Server as SocketServer } from "socket.io";
+import { Server as SocketServer, Socket } from "socket.io";
 import {
   createRoom,
   joinRoom,
@@ -12,12 +12,23 @@ import {
   getRoom,
   getRoomPublicData,
   generateAIAnswers,
+  findRoomByPlayer,
   type Difficulty,
 } from "./gameManager";
 import { CATEGORIES } from "./arabicWords";
 
 const roundTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const aiTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+interface QueueEntry {
+  socketId: string;
+  socket: Socket;
+  playerName: string;
+  playerSkin: string;
+  joinedAt: number;
+}
+
+const matchmakingQueue: QueueEntry[] = [];
 
 function clearRoomTimers(roomCode: string) {
   if (roundTimers.has(roomCode)) {
@@ -116,6 +127,68 @@ function scheduleAISubmit(io: SocketServer, roomCode: string, difficulty: Diffic
   aiTimers.set(roomCode, timer);
 }
 
+function removeFromQueue(socketId: string): boolean {
+  const idx = matchmakingQueue.findIndex((e) => e.socketId === socketId);
+  if (idx >= 0) {
+    matchmakingQueue.splice(idx, 1);
+    return true;
+  }
+  return false;
+}
+
+function tryMatchPlayers(io: SocketServer) {
+  while (matchmakingQueue.length >= 2) {
+    const p1 = matchmakingQueue.shift()!;
+    const p2 = matchmakingQueue.shift()!;
+
+    const room = createRoom(p1.socketId, p1.playerName, p1.playerSkin, "normal", false);
+    p1.socket.join(room.code);
+
+    const joinResult = joinRoom(room.code, p2.socketId, p2.playerName, p2.playerSkin);
+    if (joinResult.success && joinResult.room) {
+      p2.socket.join(room.code);
+
+      const roomData = getRoomPublicData(joinResult.room);
+      p1.socket.emit("match_found", { room: roomData });
+      p2.socket.emit("match_found", { room: roomData });
+
+      setTimeout(() => {
+        const currentRoom = getRoom(room.code);
+        if (!currentRoom || currentRoom.status !== "waiting") return;
+        const humanCount = currentRoom.players.filter((p: any) => !p.isAI).length;
+        if (humanCount < 2) {
+          currentRoom.players.forEach((p: any) => {
+            if (!p.isAI) {
+              const s = io.sockets.sockets.get(p.id);
+              if (s) {
+                s.emit("error", { message: "الخصم غادر قبل بدء اللعبة" });
+                s.leave(room.code);
+              }
+            }
+          });
+          leaveRoom(room.code, p1.socketId);
+          leaveRoom(room.code, p2.socketId);
+          return;
+        }
+        const result = startGame(room.code);
+        if (result.success && result.room) {
+          io.to(room.code).emit("game_started", {
+            roomCode: room.code,
+            letter: result.room.currentLetter,
+            categories: CATEGORIES,
+            timeLimit: result.room.timeLimit,
+            round: result.room.round,
+            maxRounds: result.room.maxRounds,
+            difficulty: result.room.difficulty,
+            hostId: result.room.hostId,
+          });
+          scheduleRoundEnd(io, room.code, result.room.timeLimit);
+        }
+      }, 3000);
+    }
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
 
@@ -143,6 +216,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       socket.join(result.room.code);
       socket.emit("room_joined", { room: getRoomPublicData(result.room) });
       socket.to(result.room.code).emit("room_updated", { room: getRoomPublicData(result.room) });
+    });
+
+    socket.on("find_match", ({ playerName, playerSkin }) => {
+      removeFromQueue(socket.id);
+      matchmakingQueue.push({
+        socketId: socket.id,
+        socket,
+        playerName: playerName || "لاعب",
+        playerSkin: playerSkin || "default",
+        joinedAt: Date.now(),
+      });
+      socket.emit("matchmaking_status", { status: "searching", queueSize: matchmakingQueue.length });
+      tryMatchPlayers(io);
+    });
+
+    socket.on("cancel_match", () => {
+      const wasInQueue = removeFromQueue(socket.id);
+      if (wasInQueue) {
+        socket.emit("matchmaking_status", { status: "cancelled" });
+      }
     });
 
     socket.on("start_game", ({ roomCode }) => {
@@ -250,6 +343,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     socket.on("disconnect", () => {
       console.log("Player disconnected:", socket.id);
+      removeFromQueue(socket.id);
+      const room = findRoomByPlayer(socket.id);
+      if (room) {
+        const updatedRoom = leaveRoom(room.code, socket.id);
+        if (updatedRoom) {
+          io.to(room.code).emit("room_updated", { room: getRoomPublicData(updatedRoom) });
+        } else {
+          clearRoomTimers(room.code);
+        }
+      }
     });
   });
 

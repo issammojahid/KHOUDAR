@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Platform,
   Animated,
   Dimensions,
+  Modal,
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -22,9 +23,23 @@ const { width } = Dimensions.get("window");
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
-  const { player } = usePlayer();
+  const { player, claimTrialReward, isLoaded } = usePlayer();
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
+  const [showTrialReward, setShowTrialReward] = useState(false);
+
+  useEffect(() => {
+    if (isLoaded && !player.claimedTrialReward) {
+      const timer = setTimeout(() => setShowTrialReward(true), 800);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoaded, player.claimedTrialReward]);
+
+  const handleClaimReward = () => {
+    claimTrialReward();
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setShowTrialReward(false);
+  };
 
   useEffect(() => {
     Animated.loop(
@@ -140,6 +155,40 @@ export default function HomeScreen() {
           <RuleRow icon="people" color={Colors.primary} text="من 2 إلى 8 لاعبين" />
         </View>
       </ScrollView>
+
+      <Modal
+        visible={showTrialReward}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+      >
+        <View style={styles.rewardOverlay}>
+          <View style={styles.rewardCard}>
+            <View style={styles.rewardIconCircle}>
+              <Ionicons name="gift" size={48} color="#F5A623" />
+            </View>
+            <Text style={styles.rewardTitle}>مكافأة ترحيبية!</Text>
+            <Text style={styles.rewardDesc}>مرحباً بك في حروف المغرب</Text>
+            <View style={styles.rewardCoinsRow}>
+              <Ionicons name="star" size={24} color={Colors.gold} />
+              <Text style={styles.rewardCoinsText}>200 قطعة نقدية</Text>
+            </View>
+            <Pressable
+              onPress={handleClaimReward}
+              style={({ pressed }) => [styles.rewardClaimBtn, pressed && { opacity: 0.85 }]}
+            >
+              <LinearGradient
+                colors={["#F5A623", "#FF6B35"]}
+                style={styles.rewardClaimGrad}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <Text style={styles.rewardClaimText}>استلم المكافأة</Text>
+              </LinearGradient>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </LinearGradient>
   );
 }
@@ -323,4 +372,38 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: "right",
   },
+  rewardOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  rewardCard: {
+    backgroundColor: "#1A0D40",
+    borderRadius: 28,
+    padding: 32,
+    alignItems: "center",
+    gap: 14,
+    borderWidth: 2,
+    borderColor: "#F5A623",
+    width: "100%",
+    maxWidth: 340,
+  },
+  rewardIconCircle: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: "rgba(245,166,35,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+  },
+  rewardTitle: { color: Colors.gold, fontSize: 26, fontFamily: "Inter_700Bold" },
+  rewardDesc: { color: Colors.textSecondary, fontSize: 15, fontFamily: "Inter_400Regular", textAlign: "center" },
+  rewardCoinsRow: { flexDirection: "row", alignItems: "center", gap: 8, marginVertical: 4 },
+  rewardCoinsText: { color: Colors.gold, fontSize: 22, fontFamily: "Inter_700Bold" },
+  rewardClaimBtn: { borderRadius: 16, overflow: "hidden", width: "100%", marginTop: 8 },
+  rewardClaimGrad: { alignItems: "center", justifyContent: "center", paddingVertical: 16 },
+  rewardClaimText: { color: "#fff", fontSize: 20, fontFamily: "Inter_700Bold" },
 });

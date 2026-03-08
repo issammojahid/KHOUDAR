@@ -147,6 +147,13 @@ export function joinRoom(
   return { success: true, room };
 }
 
+export function findRoomByPlayer(playerId: string): Room | null {
+  for (const room of rooms.values()) {
+    if (room.players.some((p) => p.id === playerId)) return room;
+  }
+  return null;
+}
+
 export function leaveRoom(roomCode: string, playerId: string): Room | null {
   const room = rooms.get(roomCode);
   if (!room) return null;

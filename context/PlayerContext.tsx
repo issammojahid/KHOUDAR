@@ -23,6 +23,7 @@ export interface PlayerData {
   totalGames: number;
   bestScore: number;
   difficulty: Difficulty;
+  claimedTrialReward: boolean;
 }
 
 interface PlayerContextValue {
@@ -34,8 +35,11 @@ interface PlayerContextValue {
   buySkin: (skinId: string) => boolean;
   recordGame: (score: number, won: boolean) => void;
   setDifficulty: (d: Difficulty) => void;
+  claimTrialReward: () => boolean;
   isLoaded: boolean;
 }
+
+const TRIAL_REWARD_AMOUNT = 200;
 
 const defaultPlayer: PlayerData = {
   name: "",
@@ -46,6 +50,7 @@ const defaultPlayer: PlayerData = {
   totalGames: 0,
   bestScore: 0,
   difficulty: "normal",
+  claimedTrialReward: false,
 };
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -115,8 +120,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     savePlayer({ ...player, difficulty: d });
   };
 
+  const claimTrialReward = (): boolean => {
+    if (player.claimedTrialReward) return false;
+    savePlayer({ ...player, coins: player.coins + TRIAL_REWARD_AMOUNT, claimedTrialReward: true });
+    return true;
+  };
+
   const value = useMemo(
-    () => ({ player, setName, addCoins, spendCoins, setSkin, buySkin, recordGame, setDifficulty, isLoaded }),
+    () => ({ player, setName, addCoins, spendCoins, setSkin, buySkin, recordGame, setDifficulty, claimTrialReward, isLoaded }),
     [player, isLoaded]
   );
 
