@@ -2,17 +2,17 @@ import { fetch } from "expo/fetch";
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 /**
- * Gets the base URL for the Express API server (e.g., "http://localhost:3000")
+ * Gets the base URL for the Express API server
+ * Uses EXPO_PUBLIC_DOMAIN if available (Expo Go dev), fallback to localhost:5000
  * @returns {string} The API base URL
  */
 export function getApiUrl(): string {
-  let host = process.env.EXPO_PUBLIC_DOMAIN;
+  let host = process.env.EXPO_PUBLIC_DOMAIN || "localhost:5000";
 
-  if (!host) {
-    throw new Error("EXPO_PUBLIC_DOMAIN is not set");
-  }
-
-  let url = new URL(`https://${host}`);
+  // Always use http for localhost, https for other domains
+  const protocol = host.includes("localhost") ? "http" : "https";
+  
+  let url = new URL(`${protocol}://${host}`);
 
   return url.href;
 }
