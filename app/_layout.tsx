@@ -1,4 +1,3 @@
-// template
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -14,14 +13,20 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
+import { PlayerProvider } from "@/context/PlayerContext";
+import { SocketProvider } from "@/context/SocketContext";
+import { StatusBar } from "expo-status-bar";
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 function RootLayoutNav() {
   return (
-    <Stack screenOptions={{ headerBackTitle: "Back" }}>
+    <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="lobby" options={{ headerShown: false }} />
+      <Stack.Screen name="game" options={{ headerShown: false }} />
+      <Stack.Screen name="results" options={{ headerShown: false }} />
+      <Stack.Screen name="final" options={{ headerShown: false }} />
     </Stack>
   );
 }
@@ -45,11 +50,16 @@ export default function RootLayout() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <GestureHandlerRootView>
-          <KeyboardProvider>
-            <RootLayoutNav />
-          </KeyboardProvider>
-        </GestureHandlerRootView>
+        <PlayerProvider>
+          <SocketProvider>
+            <GestureHandlerRootView style={{ flex: 1 }}>
+              <KeyboardProvider>
+                <StatusBar style="light" />
+                <RootLayoutNav />
+              </KeyboardProvider>
+            </GestureHandlerRootView>
+          </SocketProvider>
+        </PlayerProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );
