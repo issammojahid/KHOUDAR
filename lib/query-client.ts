@@ -11,7 +11,7 @@ export function getApiUrl(): string {
 
   if (!host) {
     // Production: use Railway server
-    return "https://huroof-f-magherib-production.up.railway.app";
+    return "https://hurouf-l-magherib-production.up.railway.app";
   }
 
   // For Replit dev domain, add port 5000
