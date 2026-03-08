@@ -7,14 +7,18 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
  * @returns {string} The API base URL
  */
 export function getApiUrl(): string {
-  let host = process.env.EXPO_PUBLIC_DOMAIN || "localhost:5000";
+  let host = process.env.EXPO_PUBLIC_DOMAIN;
 
-  // Always use http for localhost, https for other domains
-  const protocol = host.includes("localhost") ? "http" : "https";
+  if (!host) {
+    // Default: localhost with port 5000
+    return "http://localhost:5000";
+  }
+
+  // For Replit dev domain, add port 5000
+  const hasPort = host.includes(":");
+  const fullHost = hasPort ? host : `${host}:5000`;
   
-  let url = new URL(`${protocol}://${host}`);
-
-  return url.href;
+  return `https://${fullHost}`;
 }
 
 async function throwIfResNotOk(res: Response) {
