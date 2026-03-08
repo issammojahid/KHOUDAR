@@ -97,6 +97,7 @@ export default function LobbyScreen() {
           round: String(gameData.round),
           maxRounds: String(gameData.maxRounds),
           difficulty: gameData.difficulty || "normal",
+          hostId: gameData.hostId || "",
         },
       });
     });

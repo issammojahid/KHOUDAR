@@ -19,6 +19,7 @@ import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { useSocket } from "@/context/SocketContext";
 import { usePlayer } from "@/context/PlayerContext";
+import { ChatOverlay, ChatButton } from "@/components/ChatOverlay";
 
 const CATEGORY_ICONS: Record<string, any> = {
   "اسم بنت": "rose-outline",
@@ -63,6 +64,8 @@ export default function GameScreen() {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const timerAnim = useRef(new Animated.Value(1)).current;
   const submitCountRef = useRef(0);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatUnread, setChatUnread] = useState(0);
 
   const topInset = Platform.OS === "web" ? 67 : insets.top;
   const bottomInset = Platform.OS === "web" ? 34 : insets.bottom;
@@ -110,11 +113,15 @@ export default function GameScreen() {
   useEffect(() => {
     if (!socket) return;
 
-    socket.on("player_submitted", ({ playerId }: { playerId: string }) => {
+    const onPlayerSubmitted = ({ playerId }: { playerId: string }) => {
       setSubmittedPlayers((prev) => [...prev, playerId]);
-    });
+    };
 
-    socket.on("round_ended", ({ results, letter: l, round: r }) => {
+    const onChatMessage = () => {
+      setChatUnread((p) => p + 1);
+    };
+
+    const onRoundEnded = ({ results, letter: l, round: r, hostId }: any) => {
       if (timerRef.current) clearInterval(timerRef.current);
       router.replace({
         pathname: "/results",
@@ -124,13 +131,19 @@ export default function GameScreen() {
           round: String(r),
           maxRounds: String(maxRounds),
           roomCode,
+          hostId: hostId || "",
         },
       });
-    });
+    };
+
+    socket.on("player_submitted", onPlayerSubmitted);
+    socket.on("chat_message", onChatMessage);
+    socket.on("round_ended", onRoundEnded);
 
     return () => {
-      socket.off("player_submitted");
-      socket.off("round_ended");
+      socket.off("player_submitted", onPlayerSubmitted);
+      socket.off("round_ended", onRoundEnded);
+      socket.off("chat_message", onChatMessage);
     };
   }, [socket]);
 
@@ -215,32 +228,42 @@ export default function GameScreen() {
             {submittedPlayers.length} لاعب أرسل إجاباته
           </Text>
         )}
-        <Pressable
-          onPress={() => handleSubmit(false)}
-          disabled={submitted}
-          style={({ pressed }) => [
-            styles.submitBtn,
-            submitted && styles.submitBtnDone,
-            pressed && !submitted && { opacity: 0.85 },
-          ]}
-        >
-          <LinearGradient
-            colors={submitted ? ["#27AE60", "#1E8449"] : ["#F5A623", "#FF6B35"]}
-            style={styles.submitBtnGrad}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <Ionicons
-              name={submitted ? "checkmark-circle" : "send"}
-              size={22}
-              color="#fff"
+        <View style={styles.bottomRow}>
+          <View style={styles.chatBtnWrap}>
+            <ChatButton
+              onPress={() => { setChatOpen(!chatOpen); setChatUnread(0); }}
+              unreadCount={chatUnread}
             />
-            <Text style={styles.submitBtnText}>
-              {submitted ? "تم الإرسال!" : "أرسل الإجابات"}
-            </Text>
-          </LinearGradient>
-        </Pressable>
+          </View>
+          <Pressable
+            onPress={() => handleSubmit(false)}
+            disabled={submitted}
+            style={({ pressed }) => [
+              styles.submitBtn,
+              submitted && styles.submitBtnDone,
+              pressed && !submitted && { opacity: 0.85 },
+            ]}
+          >
+            <LinearGradient
+              colors={submitted ? ["#27AE60", "#1E8449"] : ["#F5A623", "#FF6B35"]}
+              style={styles.submitBtnGrad}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Ionicons
+                name={submitted ? "checkmark-circle" : "send"}
+                size={22}
+                color="#fff"
+              />
+              <Text style={styles.submitBtnText}>
+                {submitted ? "تم الإرسال!" : "أرسل الإجابات"}
+              </Text>
+            </LinearGradient>
+          </Pressable>
+        </View>
       </View>
+
+      <ChatOverlay roomCode={roomCode} visible={chatOpen} onClose={() => setChatOpen(false)} />
     </LinearGradient>
   );
 }
@@ -385,7 +408,9 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontFamily: "Inter_400Regular",
   },
-  submitBtn: { borderRadius: 16, overflow: "hidden" },
+  bottomRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  chatBtnWrap: {},
+  submitBtn: { borderRadius: 16, overflow: "hidden", flex: 1 },
   submitBtnDone: {},
   submitBtnGrad: {
     flexDirection: "row",

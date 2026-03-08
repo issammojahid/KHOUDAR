@@ -1,4 +1,4 @@
-import { CATEGORIES, getRandomLetter, getAIAnswer } from "./arabicWords";
+import { CATEGORIES, getRandomLetter, getAIAnswer, arabicWordsDB } from "./arabicWords";
 
 export type Difficulty = "easy" | "normal" | "hard";
 
@@ -231,6 +231,16 @@ export function calculateResults(roomCode: string): { room: Room; results: Round
       const startsWithLetter = firstChar === room.currentLetter;
 
       if (!startsWithLetter) {
+        playerResult.answers[category] = { text: answer, points: 0, status: "empty" };
+        continue;
+      }
+
+      const dbWords = arabicWordsDB[room.currentLetter]?.[category] || [];
+      const isInDB = dbWords.some(
+        (w) => w.trim().toLowerCase() === answer.toLowerCase()
+      );
+
+      if (!isInDB) {
         playerResult.answers[category] = { text: answer, points: 0, status: "empty" };
         continue;
       }

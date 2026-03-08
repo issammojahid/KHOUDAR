@@ -51,7 +51,8 @@ export default function ResultsScreen() {
   const topInset = Platform.OS === "web" ? 67 : insets.top;
   const bottomInset = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const [isHost, setIsHost] = React.useState(false);
+  const hostId = params.hostId as string;
+  const isHost = socket?.id === hostId;
   const [waitingNext, setWaitingNext] = React.useState(false);
 
   const confettiAnim = useRef(new Animated.Value(0)).current;
@@ -72,8 +73,6 @@ export default function ResultsScreen() {
   useEffect(() => {
     if (!socket) return;
 
-    setIsHost(false);
-
     socket.on("game_started", (gameData) => {
       setWaitingNext(false);
       router.replace({
@@ -85,12 +84,12 @@ export default function ResultsScreen() {
           timeLimit: String(gameData.timeLimit),
           round: String(gameData.round),
           maxRounds: String(gameData.maxRounds),
+          hostId: gameData.hostId || hostId,
         },
       });
     });
 
     socket.on("game_finished", ({ finalScores }) => {
-      const winner = finalScores?.[0];
       const myResult = finalScores?.find((r: PlayerResult) => r.playerName === player.name);
       const myRank = finalScores?.findIndex((r: PlayerResult) => r.playerName === player.name);
 
@@ -121,16 +120,9 @@ export default function ResultsScreen() {
       });
     });
 
-    socket.on("room_updated", ({ room }) => {
-      if (room.hostId === socket.id) {
-        setIsHost(true);
-      }
-    });
-
     return () => {
       socket.off("game_started");
       socket.off("game_finished");
-      socket.off("room_updated");
     };
   }, [socket]);
 
