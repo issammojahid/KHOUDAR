@@ -332,6 +332,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
 
+    socket.on("player_progress", ({ roomCode, filledCount }) => {
+      const room = getRoom(roomCode);
+      if (!room || room.status !== "playing") return;
+      if (!room.players.some((p) => p.id === socket.id)) return;
+      socket.to(roomCode).emit("player_progress", {
+        playerId: socket.id,
+        filledCount: typeof filledCount === "number" ? filledCount : 0,
+      });
+    });
+
     socket.on("chat_message", ({ roomCode, message, playerName }) => {
       if (!roomCode || typeof message !== "string" || !message.trim()) return;
       const room = getRoom(roomCode);

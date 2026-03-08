@@ -87,7 +87,7 @@ components/
 
 - Stores player_name, skin, best_score, total_wins, total_games
 - GET /api/leaderboard — top 50 players
-- POST /api/leaderboard — upsert player score after game ends
+- Server-side score writing from game_finished event (no client-side POST to prevent cheating)
 - Leaderboard tab fetches from server API with pull-to-refresh
 
 ## Online Matchmaking
@@ -105,9 +105,9 @@ components/
 
 ## Socket Events
 
-Client -> Server: `create_room`, `join_room`, `find_match`, `cancel_match`, `start_game`, `submit_answers`, `next_round`, `leave_room`, `chat_message`, `voice_join`, `voice_leave`, `voice_offer`, `voice_answer`, `voice_ice_candidate`
+Client -> Server: `create_room`, `join_room`, `find_match`, `cancel_match`, `start_game`, `submit_answers`, `next_round`, `leave_room`, `chat_message`, `voice_join`, `voice_leave`, `voice_offer`, `voice_answer`, `voice_ice_candidate`, `player_progress`
 
-Server -> Client: `room_created`, `room_joined`, `room_updated`, `game_started`, `round_ended`, `game_finished`, `player_submitted`, `match_found`, `matchmaking_status`, `chat_message`, `voice_peer_joined`, `voice_peer_left`, `voice_offer`, `voice_answer`, `voice_ice_candidate`, `error`
+Server -> Client: `room_created`, `room_joined`, `room_updated`, `game_started`, `round_ended`, `game_finished`, `player_submitted`, `match_found`, `matchmaking_status`, `chat_message`, `voice_peer_joined`, `voice_peer_left`, `voice_offer`, `voice_answer`, `voice_ice_candidate`, `player_progress`, `error`
 
 ## Voice Input (Microphone)
 
@@ -115,6 +115,16 @@ Server -> Client: `room_created`, `room_joined`, `room_updated`, `game_started`,
 - On web: Uses Web Speech API (SpeechRecognition) with Arabic language
 - On native: Shows alert that voice input is web-only
 - Mic turns red while actively listening
+
+## Game Excitement Features
+
+- **Opponent Progress Tracking**: real-time progress of other players during game (filled count, avatar bubbles)
+- **Combo Counter**: streak/combo system when filling categories within 5s of each other
+- **Sound Effects (Web)**: tick sounds, submit chime, time-up alarm, win/lose fanfare via Web Audio API
+- **Urgency Effects**: red pulsing screen edges at 10s, motivational Arabic text at 30s ("أسرع!", "يلا!")
+- **Animated Results**: staggered entry animations, counting score counters, sparkle confetti for winner
+- **Animated Final Screen**: confetti particles, growing podium bars, animated coin counter, rank-based messages
+- **Files**: lib/sounds.ts (audio), game.tsx (gameplay excitement), results.tsx (celebrations), final.tsx (victory)
 
 ## Design
 

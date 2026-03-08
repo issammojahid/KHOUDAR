@@ -88,6 +88,7 @@ export default function LobbyScreen() {
     const onRoomUpdated = ({ room: r }: any) => setRoom(r);
 
     const onGameStarted = (gameData: any) => {
+      const playersList = room?.players || [];
       router.replace({
         pathname: "/game",
         params: {
@@ -99,6 +100,7 @@ export default function LobbyScreen() {
           maxRounds: String(gameData.maxRounds),
           difficulty: gameData.difficulty || "normal",
           hostId: gameData.hostId || "",
+          players: JSON.stringify(playersList),
         },
       });
     };
