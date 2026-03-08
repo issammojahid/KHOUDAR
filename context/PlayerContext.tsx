@@ -69,28 +69,31 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       .finally(() => setIsLoaded(true));
   }, []);
 
-  const savePlayer = (data: PlayerData) => {
-    setPlayer(data);
-    AsyncStorage.setItem("playerData", JSON.stringify(data));
+  const updatePlayer = (updater: (prev: PlayerData) => PlayerData) => {
+    setPlayer((prev) => {
+      const next = updater(prev);
+      AsyncStorage.setItem("playerData", JSON.stringify(next));
+      return next;
+    });
   };
 
   const setName = (name: string) => {
-    savePlayer({ ...player, name });
+    updatePlayer((prev) => ({ ...prev, name }));
   };
 
   const addCoins = (amount: number) => {
-    savePlayer({ ...player, coins: player.coins + amount });
+    updatePlayer((prev) => ({ ...prev, coins: prev.coins + amount }));
   };
 
   const spendCoins = (amount: number): boolean => {
     if (player.coins < amount) return false;
-    savePlayer({ ...player, coins: player.coins - amount });
+    updatePlayer((prev) => ({ ...prev, coins: prev.coins - amount }));
     return true;
   };
 
   const setSkin = (skinId: string) => {
     if (player.ownedSkins.includes(skinId)) {
-      savePlayer({ ...player, currentSkin: skinId });
+      updatePlayer((prev) => ({ ...prev, currentSkin: skinId }));
     }
   };
 
@@ -98,31 +101,31 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const skin = SKINS.find((s) => s.id === skinId);
     if (!skin || player.ownedSkins.includes(skinId)) return false;
     if (player.coins < skin.price) return false;
-    savePlayer({
-      ...player,
-      coins: player.coins - skin.price,
-      ownedSkins: [...player.ownedSkins, skinId],
+    updatePlayer((prev) => ({
+      ...prev,
+      coins: prev.coins - skin.price,
+      ownedSkins: [...prev.ownedSkins, skinId],
       currentSkin: skinId,
-    });
+    }));
     return true;
   };
 
   const recordGame = (score: number, won: boolean) => {
-    savePlayer({
-      ...player,
-      totalGames: player.totalGames + 1,
-      totalWins: player.totalWins + (won ? 1 : 0),
-      bestScore: Math.max(player.bestScore, score),
-    });
+    updatePlayer((prev) => ({
+      ...prev,
+      totalGames: prev.totalGames + 1,
+      totalWins: prev.totalWins + (won ? 1 : 0),
+      bestScore: Math.max(prev.bestScore, score),
+    }));
   };
 
   const setDifficulty = (d: Difficulty) => {
-    savePlayer({ ...player, difficulty: d });
+    updatePlayer((prev) => ({ ...prev, difficulty: d }));
   };
 
   const claimTrialReward = (): boolean => {
     if (player.claimedTrialReward) return false;
-    savePlayer({ ...player, coins: player.coins + TRIAL_REWARD_AMOUNT, claimedTrialReward: true });
+    updatePlayer((prev) => ({ ...prev, coins: prev.coins + TRIAL_REWARD_AMOUNT, claimedTrialReward: true }));
     return true;
   };
 

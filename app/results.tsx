@@ -90,8 +90,9 @@ export default function ResultsScreen() {
     });
 
     socket.on("game_finished", ({ finalScores }) => {
-      const myResult = finalScores?.find((r: PlayerResult) => r.playerName === player.name);
-      const myRank = finalScores?.findIndex((r: PlayerResult) => r.playerName === player.name);
+      const myId = socket.id;
+      const myResult = finalScores?.find((r: PlayerResult) => r.playerId === myId);
+      const myRank = finalScores?.findIndex((r: PlayerResult) => r.playerId === myId);
 
       let coinsEarned = 10;
       if (myRank === 0) coinsEarned = 50;
@@ -116,6 +117,7 @@ export default function ResultsScreen() {
           finalScores: JSON.stringify(finalScores),
           coinsEarned: String(coinsEarned),
           roomCode,
+          myPlayerId: myId || "",
         },
       });
     });
@@ -132,11 +134,18 @@ export default function ResultsScreen() {
     socket?.emit("next_round", { roomCode });
   };
 
+  const handleFinishGame = () => {
+    setWaitingNext(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    socket?.emit("next_round", { roomCode });
+  };
+
   const handleGoHome = () => {
     router.replace("/(tabs)");
   };
 
-  const myResult = results.find((r) => r.playerName === player.name) || results[0];
+  const mySocketId = socket?.id || "";
+  const myResult = results.find((r) => r.playerId === mySocketId || r.playerName === player.name) || results[0];
   const topPlayer = results[0];
 
   return (
@@ -183,7 +192,7 @@ export default function ResultsScreen() {
           <View style={styles.rankingList}>
             {results.map((r, i) => (
               <Animated.View key={r.playerId}>
-                <RankRow result={r} rank={i} isMe={r.playerName === player.name} />
+                <RankRow result={r} rank={i} isMe={r.playerId === mySocketId || r.playerName === player.name} />
               </Animated.View>
             ))}
           </View>
@@ -199,9 +208,10 @@ export default function ResultsScreen() {
         </ScrollView>
 
         <View style={[styles.bottomBar, { paddingBottom: bottomInset + 16 }]}>
-          {isLastRound ? (
+          {isLastRound && isHost ? (
             <Pressable
-              onPress={handleGoHome}
+              onPress={handleFinishGame}
+              disabled={waitingNext}
               style={({ pressed }) => [styles.actionBtn, pressed && { opacity: 0.85 }]}
             >
               <LinearGradient
@@ -210,10 +220,21 @@ export default function ResultsScreen() {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
-                <Ionicons name="home" size={22} color="#fff" />
-                <Text style={styles.actionBtnText}>العودة للرئيسية</Text>
+                {waitingNext ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="flag" size={22} color="#fff" />
+                    <Text style={styles.actionBtnText}>إنهاء اللعبة</Text>
+                  </>
+                )}
               </LinearGradient>
             </Pressable>
+          ) : isLastRound && !isHost ? (
+            <View style={styles.waitingBar}>
+              <ActivityIndicator color={Colors.secondary} />
+              <Text style={styles.waitingText}>في انتظار المضيف لإنهاء اللعبة...</Text>
+            </View>
           ) : isHost ? (
             <Pressable
               onPress={handleNextRound}

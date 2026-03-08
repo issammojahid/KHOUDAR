@@ -56,7 +56,7 @@ export default function FinalScreen() {
   }, []);
 
   const winner = finalScores[0];
-  const myRank = finalScores.findIndex((r) => r.playerName === player.name);
+  const myRank = finalScores.findIndex((r) => r.playerName === player.name || r.playerId === (params.myPlayerId as string));
   const isWinner = myRank === 0;
 
   const spin = rotateAnim.interpolate({ inputRange: [0, 1], outputRange: ["-5deg", "5deg"] });

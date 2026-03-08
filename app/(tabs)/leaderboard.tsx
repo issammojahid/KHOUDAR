@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -29,11 +30,14 @@ export default function LeaderboardScreen() {
   const topInset = Platform.OS === "web" ? 67 : insets.top;
   const bottomInset = Platform.OS === "web" ? 34 : 0;
 
-  useEffect(() => {
-    AsyncStorage.getItem("leaderboard").then((data) => {
-      if (data) setEntries(JSON.parse(data));
-    });
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      AsyncStorage.getItem("leaderboard").then((data) => {
+        if (data) setEntries(JSON.parse(data));
+        else setEntries([]);
+      });
+    }, [])
+  );
 
   return (
     <LinearGradient colors={["#0D0625", "#1A0D40", "#2D1B69"]} style={styles.container}>

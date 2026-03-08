@@ -284,10 +284,45 @@ function CategoryInput({
   const icon = CATEGORY_ICONS[category] || "help-circle-outline";
   const color = CATEGORY_COLORS[category] || Colors.accent;
   const isValid = value.trim().startsWith(letter);
+  const [isListening, setIsListening] = useState(false);
+
+  const handleMic = () => {
+    if (disabled || isListening) return;
+    if (Platform.OS !== "web") {
+      Alert.alert("ميكروفون", "الإدخال الصوتي متاح فقط على المتصفح");
+      return;
+    }
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      Alert.alert("غير مدعوم", "متصفحك لا يدعم الإدخال الصوتي");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = "ar";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => setIsListening(true);
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript.trim();
+      if (transcript) onChange(transcript);
+      setIsListening(false);
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+    recognition.start();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
 
   return (
     <View style={[styles.inputCard, disabled && styles.inputCardDisabled]}>
       <View style={styles.inputCardHeader}>
+        <Pressable onPress={handleMic} disabled={disabled} hitSlop={8}>
+          <Ionicons
+            name={isListening ? "mic" : "mic-outline"}
+            size={20}
+            color={isListening ? Colors.error : Colors.textMuted}
+          />
+        </Pressable>
         <Ionicons name={icon} size={18} color={color} />
         <Text style={[styles.inputCardLabel, { color }]}>{category}</Text>
         {value.trim() && (
@@ -303,6 +338,7 @@ function CategoryInput({
           styles.inputField,
           disabled && styles.inputFieldDisabled,
           value.trim() && isValid && styles.inputFieldValid,
+          isListening && { borderColor: Colors.error + "80" },
         ]}
         value={value}
         onChangeText={onChange}

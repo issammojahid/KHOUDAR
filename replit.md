@@ -96,6 +96,13 @@ Client -> Server: `create_room`, `join_room`, `find_match`, `cancel_match`, `sta
 
 Server -> Client: `room_created`, `room_joined`, `room_updated`, `game_started`, `round_ended`, `game_finished`, `player_submitted`, `match_found`, `matchmaking_status`, `chat_message`, `error`
 
+## Voice Input (Microphone)
+
+- Each category input field has a mic icon button
+- On web: Uses Web Speech API (SpeechRecognition) with Arabic language
+- On native: Shows alert that voice input is web-only
+- Mic turns red while actively listening
+
 ## Design
 
 - Theme: Deep indigo/purple with gold accents, cartoon game aesthetic
