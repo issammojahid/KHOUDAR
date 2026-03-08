@@ -20,6 +20,7 @@ import Colors from "@/constants/colors";
 import { useSocket } from "@/context/SocketContext";
 import { usePlayer } from "@/context/PlayerContext";
 import { ChatOverlay, ChatButton } from "@/components/ChatOverlay";
+import { VoiceChat } from "@/components/VoiceChat";
 
 const CATEGORY_ICONS: Record<string, any> = {
   "اسم بنت": "rose-outline",
@@ -229,6 +230,9 @@ export default function GameScreen() {
           </Text>
         )}
         <View style={styles.bottomRow}>
+          <View style={styles.chatBtnWrap}>
+            <VoiceChat roomCode={roomCode} />
+          </View>
           <View style={styles.chatBtnWrap}>
             <ChatButton
               onPress={() => { setChatOpen(!chatOpen); setChatUnread(0); }}

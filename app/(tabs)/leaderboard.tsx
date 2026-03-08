@@ -5,38 +5,57 @@ import {
   StyleSheet,
   ScrollView,
   Platform,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import Colors from "@/constants/colors";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { getApiUrl } from "@/lib/query-client";
+import { fetch } from "expo/fetch";
 
 interface LeaderboardEntry {
-  name: string;
+  player_name: string;
   skin: string;
-  score: number;
-  wins: number;
-  games: number;
-  date: string;
+  best_score: number;
+  total_wins: number;
+  total_games: number;
+  last_played: string;
 }
 
 export default function LeaderboardScreen() {
   const insets = useSafeAreaInsets();
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const topInset = Platform.OS === "web" ? 67 : insets.top;
   const bottomInset = Platform.OS === "web" ? 34 : 0;
 
+  const fetchLeaderboard = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    try {
+      const url = new URL("/api/leaderboard", getApiUrl());
+      const res = await fetch(url.toString());
+      if (res.ok) {
+        const data = await res.json();
+        setEntries(data);
+      }
+    } catch {
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      AsyncStorage.getItem("leaderboard").then((data) => {
-        if (data) setEntries(JSON.parse(data));
-        else setEntries([]);
-      });
-    }, [])
+      fetchLeaderboard();
+    }, [fetchLeaderboard])
   );
 
   return (
@@ -44,6 +63,8 @@ export default function LeaderboardScreen() {
       <View style={[styles.header, { paddingTop: topInset + 16 }]}>
         <Ionicons name="trophy" size={28} color={Colors.gold} />
         <Text style={styles.title}>المتصدرون</Text>
+        <Ionicons name="globe-outline" size={20} color={Colors.teal} style={{ marginRight: 4 }} />
+        <Text style={styles.globalBadge}>عالمي</Text>
       </View>
 
       <ScrollView
@@ -52,8 +73,19 @@ export default function LeaderboardScreen() {
           { paddingBottom: bottomInset + 120 },
         ]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => fetchLeaderboard(true)}
+            tintColor={Colors.gold}
+          />
+        }
       >
-        {entries.length === 0 ? (
+        {loading ? (
+          <View style={styles.emptyState}>
+            <ActivityIndicator size="large" color={Colors.gold} />
+          </View>
+        ) : entries.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="trophy-outline" size={64} color={Colors.textMuted} />
             <Text style={styles.emptyTitle}>لا توجد بيانات بعد</Text>
@@ -61,7 +93,7 @@ export default function LeaderboardScreen() {
           </View>
         ) : (
           entries.map((entry, index) => (
-            <LeaderboardRow key={index} entry={entry} rank={index} />
+            <LeaderboardRow key={entry.player_name + index} entry={entry} rank={index} />
           ))
         )}
       </ScrollView>
@@ -81,15 +113,15 @@ function LeaderboardRow({ entry, rank }: { entry: LeaderboardEntry; rank: number
       </View>
       <PlayerAvatar skinId={entry.skin} size={48} />
       <View style={styles.rowInfo}>
-        <Text style={styles.rowName}>{entry.name}</Text>
+        <Text style={styles.rowName}>{entry.player_name}</Text>
         <View style={styles.rowMeta}>
-          <Text style={styles.rowMeta2}>{entry.games} لعبة</Text>
+          <Text style={styles.rowMeta2}>{entry.total_games} لعبة</Text>
           <Text style={styles.rowMeta2}> • </Text>
-          <Text style={styles.rowMeta2}>{entry.wins} فوز</Text>
+          <Text style={styles.rowMeta2}>{entry.total_wins} فوز</Text>
         </View>
       </View>
       <View style={styles.scoreArea}>
-        <Text style={[styles.scoreNum, { color: rankColor }]}>{entry.score}</Text>
+        <Text style={[styles.scoreNum, { color: rankColor }]}>{entry.best_score}</Text>
         <Text style={styles.scoreLabel}>نقطة</Text>
       </View>
     </View>
@@ -110,6 +142,11 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontSize: 26,
     fontFamily: "Inter_700Bold",
+  },
+  globalBadge: {
+    color: Colors.teal,
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
   },
   list: { paddingHorizontal: 20, paddingTop: 8, gap: 10 },
   emptyState: {

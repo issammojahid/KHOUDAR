@@ -15,6 +15,7 @@ const Colors = {
   gold: "#FFD700",
   silver: "#C0C0C0",
   bronze: "#CD7F32",
+  teal: "#4ECDC4",
   border: "rgba(255,255,255,0.15)",
   overlay: "rgba(0,0,0,0.6)",
   tabBar: "#1A0D40",

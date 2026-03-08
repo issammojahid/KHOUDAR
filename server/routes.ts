@@ -16,6 +16,7 @@ import {
   type Difficulty,
 } from "./gameManager";
 import { CATEGORIES } from "./arabicWords";
+import { getTopLeaderboard, upsertLeaderboard } from "./db";
 
 const roundTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const aiTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -298,8 +299,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { finished, room: updatedRoom } = nextRound(roomCode);
 
       if (finished) {
+        const finalScores = updatedRoom.roundResults;
+        if (finalScores && finalScores.length > 0) {
+          for (let i = 0; i < finalScores.length; i++) {
+            const p = finalScores[i];
+            if (p.isAI) continue;
+            upsertLeaderboard({
+              playerName: p.playerName,
+              skin: "default",
+              score: p.totalScore || 0,
+              won: i === 0,
+            }).catch((err) => console.error("Leaderboard upsert error:", err));
+          }
+        }
         io.to(roomCode).emit("game_finished", {
-          finalScores: updatedRoom.roundResults,
+          finalScores,
           hostId: updatedRoom.hostId,
         });
       } else {
@@ -341,11 +355,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
 
+    socket.on("voice_offer", ({ roomCode, targetId, offer }) => {
+      const room = getRoom(roomCode);
+      if (!room) return;
+      if (!room.players.some((p) => p.id === socket.id)) return;
+      if (!room.players.some((p) => p.id === targetId)) return;
+      io.to(targetId).emit("voice_offer", { senderId: socket.id, offer });
+    });
+
+    socket.on("voice_answer", ({ roomCode, targetId, answer }) => {
+      const room = getRoom(roomCode);
+      if (!room) return;
+      if (!room.players.some((p) => p.id === socket.id)) return;
+      if (!room.players.some((p) => p.id === targetId)) return;
+      io.to(targetId).emit("voice_answer", { senderId: socket.id, answer });
+    });
+
+    socket.on("voice_ice_candidate", ({ roomCode, targetId, candidate }) => {
+      const room = getRoom(roomCode);
+      if (!room) return;
+      if (!room.players.some((p) => p.id === socket.id)) return;
+      if (!room.players.some((p) => p.id === targetId)) return;
+      io.to(targetId).emit("voice_ice_candidate", { senderId: socket.id, candidate });
+    });
+
+    socket.on("voice_join", ({ roomCode }) => {
+      const room = getRoom(roomCode);
+      if (!room || !room.players.some((p) => p.id === socket.id)) return;
+      socket.to(roomCode).emit("voice_peer_joined", { peerId: socket.id });
+    });
+
+    socket.on("voice_leave", ({ roomCode }) => {
+      const room = getRoom(roomCode);
+      if (!room || !room.players.some((p) => p.id === socket.id)) return;
+      socket.to(roomCode).emit("voice_peer_left", { peerId: socket.id });
+    });
+
     socket.on("disconnect", () => {
       console.log("Player disconnected:", socket.id);
       removeFromQueue(socket.id);
       const room = findRoomByPlayer(socket.id);
       if (room) {
+        socket.to(room.code).emit("voice_peer_left", { peerId: socket.id });
         const updatedRoom = leaveRoom(room.code, socket.id);
         if (updatedRoom) {
           io.to(room.code).emit("room_updated", { room: getRoomPublicData(updatedRoom) });
@@ -357,6 +408,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
+
+  app.get("/api/leaderboard", async (_req, res) => {
+    try {
+      const entries = await getTopLeaderboard(50);
+      res.json(entries);
+    } catch (err) {
+      console.error("Leaderboard fetch error:", err);
+      res.status(500).json({ error: "Failed to fetch leaderboard" });
+    }
+  });
+
 
   return httpServer;
 }

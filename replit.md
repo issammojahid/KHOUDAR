@@ -6,6 +6,7 @@ A real-time multiplayer Arabic word challenge game built with Expo React Native 
 
 - **Frontend**: Expo React Native (file-based routing via expo-router)
 - **Backend**: Express + Socket.io (port 5000)
+- **Database**: PostgreSQL (global leaderboard)
 - **State**: AsyncStorage for player data; in-memory on server for rooms
 
 ## Project Structure
@@ -30,13 +31,15 @@ context/
 
 server/
   index.ts          # Express server setup
-  routes.ts         # Socket.io game event handlers + chat
+  routes.ts         # Socket.io game event handlers + chat + voice signaling + leaderboard API
   gameManager.ts    # Room/game state management + AI logic
   arabicWords.ts    # Arabic word database + AI answer generation
+  db.ts             # PostgreSQL connection + leaderboard queries
 
 components/
   PlayerAvatar.tsx  # Reusable character avatar
   ChatOverlay.tsx   # In-game text chat overlay
+  VoiceChat.tsx     # WebRTC voice chat component (web only)
   ErrorBoundary.tsx # Error boundary wrapper
 ```
 
@@ -71,11 +74,21 @@ components/
 - Words not in arabicWords.ts are scored as 0 points
 - Database covers all Arabic letters across 8 categories
 
-## Chat
+## Chat & Voice
 
 - In-game text chat via Socket.io
 - Chat button visible during gameplay
 - Server validates sender is in the room before broadcasting
+- Voice chat via WebRTC with Socket.io signaling (web only)
+- Mic toggle button in game bottom bar; auto-connects peers in room
+- STUN server: stun.l.google.com:19302
+
+## Global Leaderboard (PostgreSQL)
+
+- Stores player_name, skin, best_score, total_wins, total_games
+- GET /api/leaderboard — top 50 players
+- POST /api/leaderboard — upsert player score after game ends
+- Leaderboard tab fetches from server API with pull-to-refresh
 
 ## Online Matchmaking
 
@@ -92,9 +105,9 @@ components/
 
 ## Socket Events
 
-Client -> Server: `create_room`, `join_room`, `find_match`, `cancel_match`, `start_game`, `submit_answers`, `next_round`, `leave_room`, `chat_message`
+Client -> Server: `create_room`, `join_room`, `find_match`, `cancel_match`, `start_game`, `submit_answers`, `next_round`, `leave_room`, `chat_message`, `voice_join`, `voice_leave`, `voice_offer`, `voice_answer`, `voice_ice_candidate`
 
-Server -> Client: `room_created`, `room_joined`, `room_updated`, `game_started`, `round_ended`, `game_finished`, `player_submitted`, `match_found`, `matchmaking_status`, `chat_message`, `error`
+Server -> Client: `room_created`, `room_joined`, `room_updated`, `game_started`, `round_ended`, `game_finished`, `player_submitted`, `match_found`, `matchmaking_status`, `chat_message`, `voice_peer_joined`, `voice_peer_left`, `voice_offer`, `voice_answer`, `voice_ice_candidate`, `error`
 
 ## Voice Input (Microphone)
 
