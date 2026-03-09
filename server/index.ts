@@ -199,7 +199,13 @@ function configureExpoAndLanding(app: express.Application) {
   });
 
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
-  app.use(express.static(path.resolve(process.cwd(), "static-build")));
+  const staticPath = path.resolve(process.cwd(), "static-build");
+  if (fs.existsSync(staticPath)) {
+    app.use(express.static(staticPath));
+    log(`Serving static files from ${staticPath}`);
+  } else {
+    log(`Static directory ${staticPath} not found, skipping static file serving`);
+  }
 
   log("Expo routing: Checking expo-platform header on / and /manifest");
 }
