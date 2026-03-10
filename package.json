@@ -11,7 +11,7 @@
     "server:build": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=server_dist",
     "server:prod": "NODE_ENV=production node server_dist/index.js",
     "db:push": "drizzle-kit push",
-    "start": ""start": "NODE_ENV=production node server_dist/index.js"",
+    "start": "NODE_ENV=production node server_dist/index.js",
     "lint": "npx expo lint",
     "lint:fix": "npx expo lint --fix"
   },
@@ -56,7 +56,6 @@
     "react-native-svg": "15.12.1",
     "react-native-web": "^0.21.0",
     "react-native-worklets": "0.5.1",
-    "serve": "^14.2.6",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
     "tsx": "^4.20.6",
