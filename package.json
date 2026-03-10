@@ -10,8 +10,7 @@
   "server:prod": "NODE_ENV=production node server_dist/index.js"
 },
     "lint": "npx expo lint",
-    "lint:fix": "npx expo lint --fix"
-  },
+    "lint:fix": "npx expo lint --fix",
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.0",
     "@expo/vector-icons": "^15.0.3",
